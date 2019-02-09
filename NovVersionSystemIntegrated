@@ -1,0 +1,107 @@
+/*
+ *  Author: Christopher Swinford
+ *  Date: November 17, 2018
+ *  Description: Purpose of this script if to rewrite the full system to determine the exact functionality 
+ *  of each of the sensors involved withing the system as a whole. As well as integrate the data collection
+ *  from the wind sensor.
+ */
+
+#include <SD.h> //Allows for reading and writing to SD cards 
+#include <SPI.h> //Serial data protocol used by microcontrollers for communicating with one or more peripheral devices quickly over short distances.
+#include <SoftwareSerial.h> //Allow serial communication on other digital pins of the Arduino, using software to replicate the functionality
+
+#define TEMP_PIN A2
+#define HUM_PIN A1 
+#define rxPin 10
+#define txPin 11
+
+//Initialization of variables
+SoftwareSerial GPSModule(3, 2); //Rx, Tx //Sets up a software serial object
+String nmea[15];
+File myFile;
+//Declare a software serial object with the correct pins 
+SoftwareSerial softSerial =  SoftwareSerial(rxPin, txPin);
+//Deifne a global variable for the incoming bytes of data
+char incomingBytes[25];
+String stringBytes;
+String windSpeedString;
+String windDirectionString;
+float windSpeed;
+float windDirection;
+
+void setup() {
+  Serial.begin(9600);
+  GPSModule.begin(9600); //Sets the speed (baud rate) for the serial communication.
+  pinMode(rxPin, INPUT); //Set the receiving pin to input
+  pinMode(txPin, OUTPUT); //Set the transmitting pin to output
+  softSerial.begin(9600); //Define the baud rate for the FT sensor
+}
+
+void loop() {
+  int tempVal, humVal;
+  //GPSFetch(); //Gets the GPS data and stores it in an array
+  
+    // Check to see if data is being received from the sensor
+  stringBytes = getFTData();
+
+  tempVal = analogRead(TEMP_PIN);
+  humVal = analogRead(HUM_PIN);
+  
+  float tempVoltage = tempVal*((5.0 / 1023) * 10);
+  float temperature = (-40 + (tempVoltage * 10));
+  float humidity = humVal * (5.0 / 1023) * 100; 
+
+  windSpeedString = stringBytes.substring(8,13); //Parse the string for the wind speed
+  windDirectionString = stringBytes.substring(14,17); //Parse the string for the wind direction
+  windSpeed = windSpeedString.toFloat(); //Convert the wind speed from a string to an float
+  windDirection = windDirectionString.toFloat(); //Convert the wind direction from a string to an float
+
+  Serial.println("Temperature is:" + String(temperature));
+  Serial.println("Humidity is:" + String(humidity));
+  Serial.println("Wind Speed is:" + windSpeedString);
+  Serial.println("Wind Direction is:" + windDirectionString + "\n");
+
+  
+}
+
+//Function to get data from wind speed sensor
+String getFTData(){
+    // Check to see if data is being received from the sensor
+  if (softSerial.available()>24){
+    for(int j = 0; j < 24; j++){
+      incomingBytes[j] = softSerial.read(); //If so read that data and store it in incomingBytes
+    }
+    //Serial.print(incomingBytes); //Print that data to the serial monitor for verification of proper data transfering
+  }
+  stringBytes = String(incomingBytes); //Cast the character array to a string for data withdrawal
+  return stringBytes;
+}
+
+//Function to get the GPS Data
+void GPSFetch(void){
+  int pos = 0, stringplace = 0;
+  String tempMsg;
+    GPSModule.flush();
+    //Get the number of bytes (characters) available for reading from the serial port.
+    while (GPSModule.available() != 0){ 
+      GPSModule.read(); //Reads incoming serial data
+    }
+
+    // Collection of all of the gps related data
+    if (GPSModule.find("$GPGGA,")){
+      tempMsg = GPSModule.readStringUntil('\n'); //Reads until new line
+      //Serial.println(tempMsg); //Test print to serial monitor
+    }
+    
+    // Save timestamp to nmea array
+    for (int i = 0; i < tempMsg.length(); i++){
+        if (tempMsg.substring(i, i + 1) == ","){ 
+          nmea[pos] = tempMsg.substring(stringplace, i); //Store value from read data up until the point which a comma was found 
+          stringplace = i++; //Incriment the stringplace by 1
+          pos++; //incriment the position by 1
+        }
+    }
+    stringplace = 0;
+    pos = 0;
+}
+
